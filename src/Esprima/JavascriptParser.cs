@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using Esprima.Ast;
 
@@ -178,7 +179,7 @@ namespace Esprima
             return Finalize(node, new Module(NodeList.From(ref body), LeaveHoistingScope()));
         }
 
-        public Script ParseScript(bool strict = false)
+        public Script ParseScript(bool strict = false, bool throwIfError = false)
         {
             if (strict)
             {
@@ -191,7 +192,42 @@ namespace Esprima
             var body = ParseDirectivePrologues();
             while (_lookahead.Type != TokenType.EOF)
             {
-                body.Push(ParseStatementListItem());
+                try
+                {
+                   body.Push(ParseStatementListItem());
+                }
+                catch (ParserException ex)
+                {
+                    if (throwIfError)
+                        throw;
+                    
+                    int startIndex = body.LastOrDefault()?.Range.End ?? 0;
+                    int length = _scanner.Source.Length;
+                    int index = startIndex == ex.Index ? ex.Index + 1 : ex.Index;
+                    string source = _scanner.Source;
+                   
+                    body.Push(new EmptyStatement()
+                    {
+                        Range = new Range(startIndex, index)
+                    });
+
+                    if (index < length - 1)
+                    {
+                        string subStr = source.Substring(index)
+                            .Replace("\n", string.Empty)
+                            .Replace("\r", string.Empty);
+                       
+                        if (!string.IsNullOrEmpty(subStr))
+                        {
+                            body.Push(new EmptyStatement
+                            {
+                                Range = new Range(index, _scanner.Source.Length)
+                            });    
+                        }
+                    }
+
+                    break;
+                }
             }
 
             return Finalize(node, new Script(NodeList.From(ref body), _context.Strict, LeaveHoistingScope()));
